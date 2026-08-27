@@ -1,0 +1,48 @@
+{
+  "name": "@absolutejs/secure-messaging-redis",
+  "version": "0.0.1",
+  "description": "Tenant-scoped atomic Redis SecureMessagingStore for explicitly durable Redis deployments.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Alex Kahn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/absolutejs/secure-messaging-adapters.git",
+    "directory": "redis"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "rm -rf dist && bun build src/index.ts --outdir dist --root src --sourcemap --target=browser --external @absolutejs/secure-messaging && tsc --project tsconfig.build.json",
+    "check:package": "bun run format:check && bun run typecheck && bun run test && bun run build",
+    "format:check": "prettier --check \"./**/*.{ts,json,md}\"",
+    "release": "bun run check:package && npm publish --access public",
+    "test": "bun test tests/",
+    "test:integration": "bun test tests/redis.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@absolutejs/secure-messaging": ">=0.5.1 <0.6"
+  },
+  "devDependencies": {
+    "@absolutejs/secure-messaging": "0.5.1",
+    "@absolutejs/secure-messaging-store-conformance": "0.0.1",
+    "ioredis": "6.0.0"
+  }
+}

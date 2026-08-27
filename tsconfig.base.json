@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "exactOptionalPropertyTypes": true,
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "paths": {
+      "@absolutejs/secure-messaging-store-conformance": [
+        "conformance/src/index.ts"
+      ]
+    },
+    "target": "ES2023",
+    "types": ["bun"]
+  }
+}

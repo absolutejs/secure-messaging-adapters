@@ -1,0 +1,25 @@
+{
+  "name": "@absolutejs/secure-messaging-adapters",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "conformance",
+    "postgres",
+    "redis"
+  ],
+  "scripts": {
+    "build": "bun run --filter './*' build",
+    "check:package": "bun run format:check && bun run typecheck && bun run test && bun run build",
+    "format": "prettier --write \"./**/*.{ts,json,md}\"",
+    "format:check": "prettier --check \"./**/*.{ts,json,md}\"",
+    "test": "bun run --filter './*' test",
+    "test:integration": "bun run --cwd postgres test:integration && bun run --cwd redis test:integration",
+    "typecheck": "bun run --filter './*' typecheck"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "prettier": "^3.9.0",
+    "typescript": "^5.9.0"
+  }
+}
