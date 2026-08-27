@@ -462,9 +462,11 @@ export const createPostgresSecureMessagingStore = (options: {
   readonly maximumOutboxBytes?: number;
   readonly maximumStateBytes?: number;
   readonly now?: () => number;
+  readonly deviceId: string;
   readonly tenantId: string;
 }): SecureMessagingPostgresStore => {
   boundedIdentifier(options.tenantId);
+  boundedIdentifier(options.deviceId);
   const now = options.now ?? Date.now;
   const maximumOutboxBytes = positiveLimit(
     options.maximumOutboxBytes ?? DEFAULT_MAXIMUM_OUTBOX_BYTES,
@@ -472,7 +474,9 @@ export const createPostgresSecureMessagingStore = (options: {
   const maximumStateBytes = positiveLimit(
     options.maximumStateBytes ?? DEFAULT_MAXIMUM_STATE_BYTES,
   );
-  const tenantDigestPromise = digest(options.tenantId);
+  const tenantDigestPromise = digest(
+    JSON.stringify([options.tenantId, options.deviceId]),
+  );
 
   return Object.freeze({
     commit: async ({

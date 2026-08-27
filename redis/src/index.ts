@@ -356,9 +356,11 @@ export const createRedisSecureMessagingStore = (options: {
   readonly maximumOutboxBytes?: number;
   readonly maximumStateBytes?: number;
   readonly now?: () => number;
+  readonly deviceId: string;
   readonly tenantId: string;
 }): SecureMessagingStore => {
   boundedIdentifier(options.tenantId);
+  boundedIdentifier(options.deviceId);
   const prefix = options.keyPrefix ?? "absolute:secure-messaging:";
   if (prefix.length === 0 || prefix.length > 256 || prefix.includes("{"))
     fail();
@@ -369,7 +371,9 @@ export const createRedisSecureMessagingStore = (options: {
   const maximumStateBytes = positiveLimit(
     options.maximumStateBytes ?? DEFAULT_MAXIMUM_STATE_BYTES,
   );
-  const tenantDigestPromise = digest(options.tenantId);
+  const tenantDigestPromise = digest(
+    JSON.stringify([options.tenantId, options.deviceId]),
+  );
   const base = async () => `${prefix}{${await tenantDigestPromise}}`;
   const conversationKey = async (id: string) =>
     `${await base()}:conversation:${await digest(boundedIdentifier(id))}`;

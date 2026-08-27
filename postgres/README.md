@@ -14,6 +14,7 @@ import {
 const sql = postgres(process.env.DATABASE_URL!);
 const store = createPostgresSecureMessagingStore({
   client: createPostgresJsSecureMessagingClient(sql),
+  deviceId: authenticatedDevice.id,
   tenantId: authenticatedTenant.id,
 });
 ```
@@ -26,9 +27,11 @@ Apply the exported `SECURE_MESSAGING_POSTGRES_MIGRATION` or the packaged
 idempotent. Call `deleteExpiredInbound()` repeatedly from a maintenance job
 until it returns zero.
 
-Tenant, conversation, message, and queue identifiers are SHA-256 digested before
-use as keys. Delivery routing metadata and encrypted frames remain visible to the
-database; message plaintext and unsealed MLS state do not.
+Tenant/device scope, conversation, message, and queue identifiers are SHA-256
+digested before use as keys. Device scope is mandatory because two devices hold
+different MLS state for the same conversation. Delivery routing metadata and
+encrypted frames remain visible to the database; message plaintext and unsealed
+MLS state do not.
 
 Run `@absolutejs/secure-messaging-store-conformance` against an isolated tenant
 after database upgrades and restore drills.

@@ -10,4 +10,4 @@ operational guarantees explicitly. PostgreSQL remains the recommended backend
 when losing up to one AOF fsync interval is unacceptable.
 
 All keys for one tenant share a Redis Cluster slot. Do not let untrusted callers
-control the key prefix or tenant binding.
+control the key prefix, tenant binding, or device binding.

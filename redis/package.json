@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/secure-messaging-redis",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Tenant-scoped atomic Redis SecureMessagingStore for explicitly durable Redis deployments.",
   "type": "module",
   "license": "Apache-2.0",

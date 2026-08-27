@@ -1,8 +1,8 @@
 # Security
 
-Use one adapter instance per authenticated tenant. Use TLS, least-privilege
+Use one adapter instance per authenticated tenant and device. Use TLS, least-privilege
 database roles, encrypted storage, tested backups, and point-in-time recovery.
-Never construct a tenant from message-controlled data.
+Never construct a tenant or device scope from message-controlled data.
 
 The transaction implementation supplied to this package must roll back when its
 callback throws. Direct clients that cannot guarantee this are unsupported.

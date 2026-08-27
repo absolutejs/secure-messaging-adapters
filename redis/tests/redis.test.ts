@@ -40,10 +40,37 @@ test.skipIf(redis === undefined)(
       createStore: (scenario) =>
         createRedisSecureMessagingStore({
           client,
+          deviceId: "device-1",
           tenantId: `${runId}:${scenario}`,
         }),
     });
     expect(result.scenarios).toHaveLength(8);
+    const tenantId = `${runId}:device-isolation`;
+    const first = createRedisSecureMessagingStore({
+      client,
+      deviceId: "device-a",
+      tenantId,
+    });
+    const second = createRedisSecureMessagingStore({
+      client,
+      deviceId: "device-b",
+      tenantId,
+    });
+    const state = (marker: number) => ({
+      conversationId: "shared-conversation",
+      revision: 1,
+      sealedState: Uint8Array.of(marker),
+      securityMode: "strict-e2ee" as const,
+      status: "active" as const,
+    });
+    expect(await first.commit({ conversation: state(1) })).toBe("committed");
+    expect(await second.commit({ conversation: state(2) })).toBe("committed");
+    expect([
+      ...(await first.loadConversation("shared-conversation"))!.sealedState,
+    ]).toEqual([1]);
+    expect([
+      ...(await second.loadConversation("shared-conversation"))!.sealedState,
+    ]).toEqual([2]);
   },
 );
 

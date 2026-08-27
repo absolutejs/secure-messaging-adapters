@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/secure-messaging-postgres",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Tenant-scoped atomic PostgreSQL SecureMessagingStore for AbsoluteJS.",
   "type": "module",
   "license": "Apache-2.0",
