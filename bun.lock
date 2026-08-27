@@ -22,7 +22,7 @@
     },
     "postgres": {
       "name": "@absolutejs/secure-messaging-postgres",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "devDependencies": {
         "@absolutejs/secure-messaging": "0.5.1",
         "@absolutejs/secure-messaging-store-conformance": "0.0.1",
@@ -35,7 +35,7 @@
     },
     "redis": {
       "name": "@absolutejs/secure-messaging-redis",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "devDependencies": {
         "@absolutejs/secure-messaging": "0.5.1",
         "@absolutejs/secure-messaging-store-conformance": "0.0.1",
