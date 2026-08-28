@@ -38,19 +38,22 @@ test.skipIf(pool === undefined)(
         createPostgresSecureMessagingStore({
           client,
           deviceId: "device-1",
+          durability: "local-wal",
           tenantId: `${runId}:${scenario}`,
         }),
     });
-    expect(result.scenarios).toHaveLength(8);
+    expect(result.scenarios).toHaveLength(9);
     const tenantId = `${runId}:device-isolation`;
     const first = createPostgresSecureMessagingStore({
       client,
       deviceId: "device-a",
+      durability: "local-wal",
       tenantId,
     });
     const second = createPostgresSecureMessagingStore({
       client,
       deviceId: "device-b",
+      durability: "local-wal",
       tenantId,
     });
     const state = (marker: number) => ({

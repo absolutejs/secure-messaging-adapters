@@ -15,12 +15,22 @@ const sql = postgres(process.env.DATABASE_URL!);
 const store = createPostgresSecureMessagingStore({
   client: createPostgresJsSecureMessagingClient(sql),
   deviceId: authenticatedDevice.id,
+  durability: "local-wal",
   tenantId: authenticatedTenant.id,
 });
 ```
 
 `createNodePostgresSecureMessagingClient(pool)` supports `pg` pools without
 making either driver a runtime dependency.
+
+`durability` is mandatory. `local-wal` forces `synchronous_commit=on` for every
+adapter transaction, regardless of a weaker session or database default.
+`synchronous-replica` forces `synchronous_commit=remote_apply` and must only be
+used with an intentionally configured synchronous standby. It can block when
+that standby is unavailable, so rehearse failover and define an operator-owned
+availability policy instead of weakening durability silently.
+Both modes fail closed when PostgreSQL reports `fsync=off`; the replica mode
+also rejects an empty `synchronous_standby_names` setting.
 
 Apply the exported `SECURE_MESSAGING_POSTGRES_MIGRATION` or the packaged
 `./migrations/postgres.sql` through your migration system. The migration is

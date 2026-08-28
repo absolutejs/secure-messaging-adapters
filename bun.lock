@@ -12,7 +12,7 @@
     },
     "conformance": {
       "name": "@absolutejs/secure-messaging-store-conformance",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "devDependencies": {
         "@absolutejs/secure-messaging": "0.5.1",
       },
@@ -22,10 +22,10 @@
     },
     "postgres": {
       "name": "@absolutejs/secure-messaging-postgres",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "devDependencies": {
         "@absolutejs/secure-messaging": "0.5.1",
-        "@absolutejs/secure-messaging-store-conformance": "0.0.1",
+        "@absolutejs/secure-messaging-store-conformance": "0.1.0",
         "@types/pg": "8.23.1",
         "pg": "8.23.0",
       },
@@ -35,10 +35,10 @@
     },
     "redis": {
       "name": "@absolutejs/secure-messaging-redis",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "devDependencies": {
         "@absolutejs/secure-messaging": "0.5.1",
-        "@absolutejs/secure-messaging-store-conformance": "0.0.1",
+        "@absolutejs/secure-messaging-store-conformance": "0.1.0",
         "ioredis": "6.0.0",
       },
       "peerDependencies": {

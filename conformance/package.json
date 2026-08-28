@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/secure-messaging-store-conformance",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Repeatable atomicity, replay, concurrency, and crash-boundary drills for SecureMessagingStore adapters.",
   "type": "module",
   "license": "Apache-2.0",

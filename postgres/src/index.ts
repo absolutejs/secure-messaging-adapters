@@ -69,6 +69,9 @@ export type SecureMessagingPostgresStore = SecureMessagingStore & {
   }) => Promise<number>;
 };
 
+export type SecureMessagingPostgresDurability =
+  "local-wal" | "synchronous-replica";
+
 export const SECURE_MESSAGING_POSTGRES_MIGRATION = `
 CREATE TABLE IF NOT EXISTS absolute_secure_messaging_conversations (
   tenant_digest TEXT NOT NULL,
@@ -152,6 +155,10 @@ type StoredConversationRow = {
 };
 
 type StoredOutboxRow = { readonly payload_json: unknown };
+type PostgreSqlSettingRow = {
+  readonly fsync: unknown;
+  readonly synchronous_standby_names: unknown;
+};
 
 class CommitConflict extends Error {
   readonly result: Exclude<SecureMessagingStoreCommitResult, "committed">;
@@ -459,6 +466,7 @@ const recordInbound = async (
 
 export const createPostgresSecureMessagingStore = (options: {
   readonly client: SecureMessagingPostgresClient;
+  readonly durability: SecureMessagingPostgresDurability;
   readonly maximumOutboxBytes?: number;
   readonly maximumStateBytes?: number;
   readonly now?: () => number;
@@ -491,11 +499,35 @@ export const createPostgresSecureMessagingStore = (options: {
         (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
       )
         fail();
+      if (
+        (expectedRevision === undefined && conversation.revision !== 1) ||
+        (expectedRevision !== undefined &&
+          conversation.revision !== expectedRevision + 1)
+      )
+        return "state-conflict";
       if (outbox.length > 1_000) fail();
       const currentTime = now();
       const tenantDigest = await tenantDigestPromise;
       try {
         await options.client.transaction(async (transaction) => {
+          const settings = await transaction.query<PostgreSqlSettingRow>(
+            "SELECT current_setting('fsync') AS fsync, current_setting('synchronous_standby_names') AS synchronous_standby_names",
+            [],
+          );
+          const setting = settings.rows[0] ?? fail();
+          if (setting.fsync !== "on") fail();
+          if (
+            options.durability === "synchronous-replica" &&
+            (typeof setting.synchronous_standby_names !== "string" ||
+              setting.synchronous_standby_names.trim().length === 0)
+          )
+            fail();
+          await transaction.query(
+            options.durability === "synchronous-replica"
+              ? "SET LOCAL synchronous_commit = 'remote_apply'"
+              : "SET LOCAL synchronous_commit = 'on'",
+            [],
+          );
           if (inbound !== undefined) {
             const inboundResult = await recordInbound(
               transaction,

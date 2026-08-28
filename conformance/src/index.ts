@@ -17,6 +17,14 @@ export type SecureMessagingStoreConformanceResult = {
   readonly scenarios: readonly string[];
 };
 
+export type SecureMessagingStoreRecoveryFixture = {
+  readonly conversationId: string;
+  readonly digest: string;
+  readonly expiresAt: number;
+  readonly messageId: string;
+  readonly queueId: string;
+};
+
 const equal = (actual: unknown, expected: unknown, label: string) => {
   if (JSON.stringify(actual) !== JSON.stringify(expected))
     throw new Error(`${label}: expected ${JSON.stringify(expected)}`);
@@ -156,6 +164,34 @@ export const runSecureMessagingStoreConformance = async (
     );
   });
 
+  await scenario("revision rollback is rejected", async (store) => {
+    equal(
+      await store.commit({
+        conversation: conversation("conversation-monotonic", 1),
+      }),
+      "committed",
+      "monotonic seed",
+    );
+    equal(
+      await store.commit({
+        conversation: conversation("conversation-monotonic", 1, 90),
+        expectedRevision: 1,
+      }),
+      "state-conflict",
+      "same revision rewrite",
+    );
+    equal(
+      [
+        ...requireValue(
+          await store.loadConversation("conversation-monotonic"),
+          "monotonic state",
+        ).sealedState,
+      ],
+      [1, 2],
+      "state remains unchanged",
+    );
+  });
+
   await scenario("replay classification", async (store) => {
     const receipt = inbound("conversation-replay", "message-replay");
     equal(await store.inspectInbound(receipt), "new", "new receipt");
@@ -291,4 +327,72 @@ export const runSecureMessagingStoreConformance = async (
   );
 
   return Object.freeze({ scenarios: Object.freeze(scenarios) });
+};
+
+export const seedSecureMessagingStoreRecovery = async (
+  store: SecureMessagingStore,
+  runId: string,
+): Promise<SecureMessagingStoreRecoveryFixture> => {
+  const fixture = Object.freeze({
+    conversationId: `recovery:${runId}:conversation`,
+    digest: `recovery:${runId}:digest`,
+    expiresAt: farFuture,
+    messageId: `recovery:${runId}:message`,
+    queueId: `recovery:${runId}:queue`,
+  });
+  equal(
+    await store.commit({
+      conversation: conversation(fixture.conversationId, 1, 41),
+      inbound: inbound(
+        fixture.conversationId,
+        fixture.messageId,
+        fixture.digest,
+      ),
+      outbox: [outbox(fixture.conversationId, fixture.queueId, 51)],
+    }),
+    "committed",
+    "recovery seed",
+  );
+  return fixture;
+};
+
+export const mutateSecureMessagingStoreAfterRecoveryPoint = async (
+  store: SecureMessagingStore,
+  fixture: SecureMessagingStoreRecoveryFixture,
+): Promise<void> => {
+  equal(
+    await store.commit({
+      conversation: conversation(fixture.conversationId, 2, 61),
+      expectedRevision: 1,
+    }),
+    "committed",
+    "post-recovery-point mutation",
+  );
+  await store.removeOutbox([fixture.queueId]);
+};
+
+export const verifySecureMessagingStoreRecovery = async (
+  store: SecureMessagingStore,
+  fixture: SecureMessagingStoreRecoveryFixture,
+): Promise<void> => {
+  const restored = requireValue(
+    await store.loadConversation(fixture.conversationId),
+    "restored conversation",
+  );
+  equal(restored.revision, 1, "restored revision");
+  equal([...restored.sealedState], [41, 42], "restored sealed state");
+  equal(
+    await store.inspectInbound({
+      conversationId: fixture.conversationId,
+      digest: fixture.digest,
+      messageId: fixture.messageId,
+    }),
+    "duplicate",
+    "restored replay receipt",
+  );
+  equal(
+    (await store.listOutbox(1)).map(({ queueId }) => queueId),
+    [fixture.queueId],
+    "restored encrypted outbox",
+  );
 };

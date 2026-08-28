@@ -23,7 +23,29 @@ export type SecureMessagingRedisClient = {
     start: number,
     stop: number,
   ) => Promise<readonly string[]>;
+  readonly wait: (
+    replicas: number,
+    timeoutMilliseconds: number,
+  ) => Promise<unknown>;
+  readonly waitaof: (
+    localFsyncs: number,
+    replicaFsyncs: number,
+    timeoutMilliseconds: number,
+  ) => Promise<unknown>;
 };
+
+export type SecureMessagingRedisDurability =
+  | { readonly mode: "memory" }
+  | {
+      readonly mode: "replicated";
+      readonly replicas: number;
+      readonly timeoutMilliseconds: number;
+    }
+  | {
+      readonly mode: "aof";
+      readonly replicaFsyncs: number;
+      readonly timeoutMilliseconds: number;
+    };
 
 export type NodeRedisLike = {
   readonly eval: (
@@ -40,9 +62,15 @@ export type NodeRedisLike = {
     start: number,
     stop: number,
   ) => Promise<string[]>;
+  readonly sendCommand: (arguments_: readonly string[]) => Promise<unknown>;
+  readonly wait: (
+    replicas: number,
+    timeoutMilliseconds: number,
+  ) => Promise<unknown>;
 };
 
 export type IoRedisLike = {
+  readonly call: (...arguments_: string[]) => Promise<unknown>;
   readonly eval: (
     script: string,
     numberOfKeys: number,
@@ -55,6 +83,10 @@ export type IoRedisLike = {
     start: number,
     stop: number,
   ) => Promise<string[]>;
+  readonly wait: (
+    replicas: number,
+    timeoutMilliseconds: number,
+  ) => Promise<unknown>;
 };
 
 export const createNodeRedisSecureMessagingClient = (
@@ -66,7 +98,9 @@ export const createNodeRedisSecureMessagingClient = (
     typeof client.eval !== "function" ||
     typeof client.get !== "function" ||
     typeof client.hGetAll !== "function" ||
-    typeof client.zRange !== "function"
+    typeof client.zRange !== "function" ||
+    typeof client.sendCommand !== "function" ||
+    typeof client.wait !== "function"
   )
     fail();
   return Object.freeze({
@@ -75,6 +109,15 @@ export const createNodeRedisSecureMessagingClient = (
     get: (key) => client.get(key),
     hgetall: (key) => client.hGetAll(key),
     zrange: (key, start, stop) => client.zRange(key, start, stop),
+    wait: (replicas, timeoutMilliseconds) =>
+      client.wait(replicas, timeoutMilliseconds),
+    waitaof: (localFsyncs, replicaFsyncs, timeoutMilliseconds) =>
+      client.sendCommand([
+        "WAITAOF",
+        String(localFsyncs),
+        String(replicaFsyncs),
+        String(timeoutMilliseconds),
+      ]),
   });
 };
 
@@ -87,7 +130,9 @@ export const createIoRedisSecureMessagingClient = (
     typeof client.eval !== "function" ||
     typeof client.get !== "function" ||
     typeof client.hgetall !== "function" ||
-    typeof client.zrange !== "function"
+    typeof client.zrange !== "function" ||
+    typeof client.call !== "function" ||
+    typeof client.wait !== "function"
   )
     fail();
   return Object.freeze({
@@ -96,6 +141,15 @@ export const createIoRedisSecureMessagingClient = (
     get: (key) => client.get(key),
     hgetall: (key) => client.hgetall(key),
     zrange: (key, start, stop) => client.zrange(key, start, stop),
+    wait: (replicas, timeoutMilliseconds) =>
+      client.wait(replicas, timeoutMilliseconds),
+    waitaof: (localFsyncs, replicaFsyncs, timeoutMilliseconds) =>
+      client.call(
+        "WAITAOF",
+        String(localFsyncs),
+        String(replicaFsyncs),
+        String(timeoutMilliseconds),
+      ),
   });
 };
 
@@ -350,8 +404,21 @@ const resultValue = <Value extends string>(
   return fail();
 };
 
+const nonnegativeInteger = (value: number) => {
+  if (!Number.isSafeInteger(value) || value < 0) fail();
+  return value;
+};
+
+const durabilityCount = (value: unknown) => {
+  const parsed = typeof value === "string" ? Number(value) : value;
+  return typeof parsed === "number" && Number.isSafeInteger(parsed)
+    ? parsed
+    : fail();
+};
+
 export const createRedisSecureMessagingStore = (options: {
   readonly client: SecureMessagingRedisClient;
+  readonly durability: SecureMessagingRedisDurability;
   readonly keyPrefix?: string;
   readonly maximumOutboxBytes?: number;
   readonly maximumStateBytes?: number;
@@ -374,6 +441,36 @@ export const createRedisSecureMessagingStore = (options: {
   const tenantDigestPromise = digest(
     JSON.stringify([options.tenantId, options.deviceId]),
   );
+  if (options.durability.mode === "replicated") {
+    positiveLimit(options.durability.replicas);
+    positiveLimit(options.durability.timeoutMilliseconds);
+  } else if (options.durability.mode === "aof") {
+    nonnegativeInteger(options.durability.replicaFsyncs);
+    positiveLimit(options.durability.timeoutMilliseconds);
+  }
+  const confirmDurability = async () => {
+    if (options.durability.mode === "memory") return;
+    if (options.durability.mode === "replicated") {
+      const replicas = durabilityCount(
+        await options.client.wait(
+          options.durability.replicas,
+          options.durability.timeoutMilliseconds,
+        ),
+      );
+      if (replicas < options.durability.replicas) fail();
+      return;
+    }
+    const result = await options.client.waitaof(
+      1,
+      options.durability.replicaFsyncs,
+      options.durability.timeoutMilliseconds,
+    );
+    const acknowledgements =
+      Array.isArray(result) && result.length === 2 ? result : fail();
+    const local = durabilityCount(acknowledgements[0]);
+    const replicas = durabilityCount(acknowledgements[1]);
+    if (local < 1 || replicas < options.durability.replicaFsyncs) fail();
+  };
   const base = async () => `${prefix}{${await tenantDigestPromise}}`;
   const conversationKey = async (id: string) =>
     `${await base()}:conversation:${await digest(boundedIdentifier(id))}`;
@@ -396,6 +493,12 @@ export const createRedisSecureMessagingStore = (options: {
         (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
       )
         fail();
+      if (
+        (expectedRevision === undefined && conversation.revision !== 1) ||
+        (expectedRevision !== undefined &&
+          conversation.revision !== expectedRevision + 1)
+      )
+        return "state-conflict";
       if (outbox.length > 1_000) fail();
       const currentTime = now();
       if (inbound !== undefined) validateInbound(inbound, currentTime);
@@ -410,7 +513,7 @@ export const createRedisSecureMessagingStore = (options: {
           : await inboundKey(inbound.conversationId, inbound.messageId),
         ...(await Promise.all(outbox.map(({ queueId }) => outboxKey(queueId)))),
       ];
-      return resultValue(
+      const result = resultValue(
         await options.client.eval(SECURE_MESSAGING_REDIS_COMMIT_SCRIPT, keys, [
           expectedRevision === undefined ? "" : String(expectedRevision),
           String(conversation.revision),
@@ -428,6 +531,8 @@ export const createRedisSecureMessagingStore = (options: {
         ]),
         ["committed", "replay-conflict", "state-conflict"] as const,
       );
+      if (result === "committed") await confirmDurability();
+      return result;
     },
     inspectInbound: async (receipt) => {
       boundedIdentifier(receipt.digest);
@@ -481,7 +586,7 @@ export const createRedisSecureMessagingStore = (options: {
     recordInbound: async (receipt) => {
       const currentTime = now();
       validateInbound(receipt, currentTime);
-      return resultValue(
+      const result = resultValue(
         await options.client.eval(
           SECURE_MESSAGING_REDIS_RECORD_INBOUND_SCRIPT,
           [await inboundKey(receipt.conversationId, receipt.messageId)],
@@ -489,16 +594,19 @@ export const createRedisSecureMessagingStore = (options: {
         ),
         ["recorded", "duplicate", "conflict"] as const,
       );
+      if (result === "recorded") await confirmDurability();
+      return result;
     },
     removeConversation: async (conversationId, expectedRevision) => {
       positiveLimit(expectedRevision);
-      return (
+      const removed =
         (await options.client.eval(
           SECURE_MESSAGING_REDIS_REMOVE_CONVERSATION_SCRIPT,
           [await conversationKey(conversationId)],
           [String(expectedRevision)],
-        )) === 1
-      );
+        )) === 1;
+      if (removed) await confirmDurability();
+      return removed;
     },
     removeOutbox: async (queueIds) => {
       if (queueIds.length > 1_000) fail();
@@ -508,6 +616,7 @@ export const createRedisSecureMessagingStore = (options: {
         [await outboxIndex(), ...(await Promise.all(queueIds.map(outboxKey)))],
         [],
       );
+      await confirmDurability();
     },
   });
 };

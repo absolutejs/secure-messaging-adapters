@@ -5,7 +5,12 @@ import type {
   SecureMessagingStoredConversation,
 } from "@absolutejs/secure-messaging";
 import { expect, test } from "bun:test";
-import { runSecureMessagingStoreConformance } from "../src";
+import {
+  mutateSecureMessagingStoreAfterRecoveryPoint,
+  runSecureMessagingStoreConformance,
+  seedSecureMessagingStoreRecovery,
+  verifySecureMessagingStoreRecovery,
+} from "../src";
 
 const memoryStore = (): SecureMessagingStore => {
   const states = new Map<string, SecureMessagingStoredConversation>();
@@ -30,7 +35,8 @@ const memoryStore = (): SecureMessagingStore => {
       if (
         (expectedRevision === undefined && current !== undefined) ||
         (expectedRevision !== undefined &&
-          current?.revision !== expectedRevision)
+          (current?.revision !== expectedRevision ||
+            conversation.revision !== expectedRevision + 1))
       )
         return "state-conflict";
       if (inbound !== undefined) {
@@ -86,7 +92,17 @@ test("the conformance runner exercises the complete durable contract", async () 
   const result = await runSecureMessagingStoreConformance({
     createStore: memoryStore,
   });
-  expect(result.scenarios).toHaveLength(8);
+  expect(result.scenarios).toHaveLength(9);
+});
+
+test("the two-phase recovery fixture detects a post-backup source", async () => {
+  const store = memoryStore();
+  const fixture = await seedSecureMessagingStoreRecovery(store, "unit");
+  await verifySecureMessagingStoreRecovery(store, fixture);
+  await mutateSecureMessagingStoreAfterRecoveryPoint(store, fixture);
+  await expect(
+    verifySecureMessagingStoreRecovery(store, fixture),
+  ).rejects.toThrow("restored revision");
 });
 
 test("public source uses type aliases rather than interfaces", async () => {

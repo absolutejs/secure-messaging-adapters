@@ -41,19 +41,34 @@ test.skipIf(redis === undefined)(
         createRedisSecureMessagingStore({
           client,
           deviceId: "device-1",
+          durability: {
+            mode: "aof",
+            replicaFsyncs: 0,
+            timeoutMilliseconds: 5_000,
+          },
           tenantId: `${runId}:${scenario}`,
         }),
     });
-    expect(result.scenarios).toHaveLength(8);
+    expect(result.scenarios).toHaveLength(9);
     const tenantId = `${runId}:device-isolation`;
     const first = createRedisSecureMessagingStore({
       client,
       deviceId: "device-a",
+      durability: {
+        mode: "aof",
+        replicaFsyncs: 0,
+        timeoutMilliseconds: 5_000,
+      },
       tenantId,
     });
     const second = createRedisSecureMessagingStore({
       client,
       deviceId: "device-b",
+      durability: {
+        mode: "aof",
+        replicaFsyncs: 0,
+        timeoutMilliseconds: 5_000,
+      },
       tenantId,
     });
     const state = (marker: number) => ({
@@ -72,6 +87,7 @@ test.skipIf(redis === undefined)(
       ...(await second.loadConversation("shared-conversation"))!.sealedState,
     ]).toEqual([2]);
   },
+  30_000,
 );
 
 test("public source uses type aliases rather than interfaces", async () => {
