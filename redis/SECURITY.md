@@ -11,3 +11,9 @@ when losing up to one AOF fsync interval is unacceptable.
 
 All keys for one tenant share a Redis Cluster slot. Do not let untrusted callers
 control the key prefix, tenant binding, or device binding.
+
+Redis replication is asynchronous. Configure a minimum writable replica count,
+but still treat every mutation transport failure or insufficient `WAIT`/`WAITAOF`
+response as `SecureMessagingDurabilityUncertainError`. Resolve the authoritative
+primary and compare the complete intended conversation before retrying. Never
+trust state read from an isolated former primary and never retry blindly.

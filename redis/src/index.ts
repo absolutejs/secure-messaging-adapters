@@ -4,6 +4,7 @@ import type {
   SecureMessagingStore,
   SecureMessagingStoredConversation,
 } from "@absolutejs/secure-messaging";
+import { SecureMessagingDurabilityUncertainError } from "@absolutejs/secure-messaging";
 
 const encoder = new TextEncoder();
 const MAXIMUM_IDENTIFIER_BYTES = 512;
@@ -221,6 +222,21 @@ return #KEYS - 1
 
 const fail = (): never => {
   throw new Error("Secure messaging Redis store failed");
+};
+
+const durabilityUncertain = (cause?: unknown): never => {
+  throw new SecureMessagingDurabilityUncertainError(
+    cause === undefined ? undefined : { cause },
+  );
+};
+
+const mutate = async <Value>(operation: () => Promise<Value>) => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof SecureMessagingDurabilityUncertainError) throw error;
+    return durabilityUncertain(error);
+  }
 };
 
 const boundedIdentifier = (value: string) => {
@@ -450,26 +466,34 @@ export const createRedisSecureMessagingStore = (options: {
   }
   const confirmDurability = async () => {
     if (options.durability.mode === "memory") return;
-    if (options.durability.mode === "replicated") {
-      const replicas = durabilityCount(
-        await options.client.wait(
-          options.durability.replicas,
-          options.durability.timeoutMilliseconds,
-        ),
+    try {
+      if (options.durability.mode === "replicated") {
+        const replicas = durabilityCount(
+          await options.client.wait(
+            options.durability.replicas,
+            options.durability.timeoutMilliseconds,
+          ),
+        );
+        if (replicas < options.durability.replicas) durabilityUncertain();
+        return;
+      }
+      const result = await options.client.waitaof(
+        1,
+        options.durability.replicaFsyncs,
+        options.durability.timeoutMilliseconds,
       );
-      if (replicas < options.durability.replicas) fail();
-      return;
+      const acknowledgements =
+        Array.isArray(result) && result.length === 2
+          ? result
+          : durabilityUncertain();
+      const local = durabilityCount(acknowledgements[0]);
+      const replicas = durabilityCount(acknowledgements[1]);
+      if (local < 1 || replicas < options.durability.replicaFsyncs)
+        durabilityUncertain();
+    } catch (error) {
+      if (error instanceof SecureMessagingDurabilityUncertainError) throw error;
+      durabilityUncertain(error);
     }
-    const result = await options.client.waitaof(
-      1,
-      options.durability.replicaFsyncs,
-      options.durability.timeoutMilliseconds,
-    );
-    const acknowledgements =
-      Array.isArray(result) && result.length === 2 ? result : fail();
-    const local = durabilityCount(acknowledgements[0]);
-    const replicas = durabilityCount(acknowledgements[1]);
-    if (local < 1 || replicas < options.durability.replicaFsyncs) fail();
   };
   const base = async () => `${prefix}{${await tenantDigestPromise}}`;
   const conversationKey = async (id: string) =>
@@ -513,23 +537,29 @@ export const createRedisSecureMessagingStore = (options: {
           : await inboundKey(inbound.conversationId, inbound.messageId),
         ...(await Promise.all(outbox.map(({ queueId }) => outboxKey(queueId)))),
       ];
-      const result = resultValue(
-        await options.client.eval(SECURE_MESSAGING_REDIS_COMMIT_SCRIPT, keys, [
-          expectedRevision === undefined ? "" : String(expectedRevision),
-          String(conversation.revision),
-          base64urlEncode(
-            byteValue(conversation.sealedState, maximumStateBytes),
+      const result = await mutate(async () =>
+        resultValue(
+          await options.client.eval(
+            SECURE_MESSAGING_REDIS_COMMIT_SCRIPT,
+            keys,
+            [
+              expectedRevision === undefined ? "" : String(expectedRevision),
+              String(conversation.revision),
+              base64urlEncode(
+                byteValue(conversation.sealedState, maximumStateBytes),
+              ),
+              conversation.securityMode,
+              conversation.status,
+              inbound === undefined ? "0" : "1",
+              inbound?.digest ?? "",
+              String(outbox.length),
+              ...payloads,
+              String(inbound?.expiresAt ?? 0),
+              String(currentTime),
+            ],
           ),
-          conversation.securityMode,
-          conversation.status,
-          inbound === undefined ? "0" : "1",
-          inbound?.digest ?? "",
-          String(outbox.length),
-          ...payloads,
-          String(inbound?.expiresAt ?? 0),
-          String(currentTime),
-        ]),
-        ["committed", "replay-conflict", "state-conflict"] as const,
+          ["committed", "replay-conflict", "state-conflict"] as const,
+        ),
       );
       if (result === "committed") await confirmDurability();
       return result;
@@ -586,35 +616,44 @@ export const createRedisSecureMessagingStore = (options: {
     recordInbound: async (receipt) => {
       const currentTime = now();
       validateInbound(receipt, currentTime);
-      const result = resultValue(
-        await options.client.eval(
-          SECURE_MESSAGING_REDIS_RECORD_INBOUND_SCRIPT,
-          [await inboundKey(receipt.conversationId, receipt.messageId)],
-          [receipt.digest, String(receipt.expiresAt)],
+      const result = await mutate(async () =>
+        resultValue(
+          await options.client.eval(
+            SECURE_MESSAGING_REDIS_RECORD_INBOUND_SCRIPT,
+            [await inboundKey(receipt.conversationId, receipt.messageId)],
+            [receipt.digest, String(receipt.expiresAt)],
+          ),
+          ["recorded", "duplicate", "conflict"] as const,
         ),
-        ["recorded", "duplicate", "conflict"] as const,
       );
       if (result === "recorded") await confirmDurability();
       return result;
     },
     removeConversation: async (conversationId, expectedRevision) => {
       positiveLimit(expectedRevision);
-      const removed =
-        (await options.client.eval(
-          SECURE_MESSAGING_REDIS_REMOVE_CONVERSATION_SCRIPT,
-          [await conversationKey(conversationId)],
-          [String(expectedRevision)],
-        )) === 1;
+      const removed = await mutate(
+        async () =>
+          (await options.client.eval(
+            SECURE_MESSAGING_REDIS_REMOVE_CONVERSATION_SCRIPT,
+            [await conversationKey(conversationId)],
+            [String(expectedRevision)],
+          )) === 1,
+      );
       if (removed) await confirmDurability();
       return removed;
     },
     removeOutbox: async (queueIds) => {
       if (queueIds.length > 1_000) fail();
       if (queueIds.length === 0) return;
-      await options.client.eval(
-        SECURE_MESSAGING_REDIS_REMOVE_OUTBOX_SCRIPT,
-        [await outboxIndex(), ...(await Promise.all(queueIds.map(outboxKey)))],
-        [],
+      await mutate(async () =>
+        options.client.eval(
+          SECURE_MESSAGING_REDIS_REMOVE_OUTBOX_SCRIPT,
+          [
+            await outboxIndex(),
+            ...(await Promise.all(queueIds.map(outboxKey))),
+          ],
+          [],
+        ),
       );
       await confirmDurability();
     },

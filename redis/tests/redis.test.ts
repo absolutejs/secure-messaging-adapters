@@ -1,4 +1,8 @@
-import { runSecureMessagingStoreConformance } from "@absolutejs/secure-messaging-store-conformance";
+import { SecureMessagingDurabilityUncertainError } from "@absolutejs/secure-messaging";
+import {
+  runSecureMessagingDurabilityUncertaintyConformance,
+  runSecureMessagingStoreConformance,
+} from "@absolutejs/secure-messaging-store-conformance";
 import { afterAll, expect, test } from "bun:test";
 import Redis from "ioredis";
 import {
@@ -29,6 +33,37 @@ test("commit script validates every conflict before its first write", () => {
   ).toBeLessThan(firstWrite);
 });
 
+test("insufficient durability acknowledgement is explicitly uncertain", async () => {
+  const store = createRedisSecureMessagingStore({
+    client: {
+      eval: async () => "committed",
+      get: async () => null,
+      hgetall: async () => ({}),
+      wait: async () => 0,
+      waitaof: async () => [0, 0],
+      zrange: async () => [],
+    },
+    deviceId: "device-1",
+    durability: {
+      mode: "aof",
+      replicaFsyncs: 0,
+      timeoutMilliseconds: 1,
+    },
+    tenantId: "tenant-1",
+  });
+  await expect(
+    store.commit({
+      conversation: {
+        conversationId: "conversation-1",
+        revision: 1,
+        sealedState: Uint8Array.of(1),
+        securityMode: "strict-e2ee",
+        status: "active",
+      },
+    }),
+  ).rejects.toBeInstanceOf(SecureMessagingDurabilityUncertainError);
+});
+
 test.skipIf(redis === undefined)(
   "passes every conformance and crash-boundary drill against Redis",
   async () => {
@@ -50,6 +85,44 @@ test.skipIf(redis === undefined)(
         }),
     });
     expect(result.scenarios).toHaveLength(9);
+    const uncertaintyTenant = `${runId}:durability-uncertainty`;
+    const faultClient = {
+      ...client,
+      waitaof: async (
+        localFsyncs: number,
+        replicaFsyncs: number,
+        timeoutMilliseconds: number,
+      ) => {
+        await client.waitaof(localFsyncs, replicaFsyncs, timeoutMilliseconds);
+        return [0, 0];
+      },
+    };
+    const uncertainty =
+      await runSecureMessagingDurabilityUncertaintyConformance({
+        commitWithLostAcknowledgement: (input) =>
+          createRedisSecureMessagingStore({
+            client: faultClient,
+            deviceId: "device-1",
+            durability: {
+              mode: "aof",
+              replicaFsyncs: 0,
+              timeoutMilliseconds: 5_000,
+            },
+            tenantId: uncertaintyTenant,
+          }).commit(input),
+        resolveAuthoritativeStore: () =>
+          createRedisSecureMessagingStore({
+            client,
+            deviceId: "device-1",
+            durability: {
+              mode: "aof",
+              replicaFsyncs: 0,
+              timeoutMilliseconds: 5_000,
+            },
+            tenantId: uncertaintyTenant,
+          }),
+      });
+    expect(uncertainty.initialResolution).toBe("applied");
     const tenantId = `${runId}:device-isolation`;
     const first = createRedisSecureMessagingStore({
       client,

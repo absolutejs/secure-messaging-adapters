@@ -46,4 +46,9 @@ MLS state do not.
 Run `@absolutejs/secure-messaging-store-conformance` against an isolated tenant
 after database upgrades and restore drills.
 
+This release accepts the `@absolutejs/secure-messaging@0.6` store contract and
+classifies mutation response loss as `SecureMessagingDurabilityUncertainError`.
+Reconnect to the authoritative database and call
+`resolveSecureMessagingStoreCommit()` before retrying a conversation commit.
+
 Licensed under Apache-2.0.

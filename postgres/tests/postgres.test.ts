@@ -1,10 +1,15 @@
-import { runSecureMessagingStoreConformance } from "@absolutejs/secure-messaging-store-conformance";
+import { SecureMessagingDurabilityUncertainError } from "@absolutejs/secure-messaging";
+import {
+  runSecureMessagingDurabilityUncertaintyConformance,
+  runSecureMessagingStoreConformance,
+} from "@absolutejs/secure-messaging-store-conformance";
 import { afterAll, expect, test } from "bun:test";
 import { Pool } from "pg";
 import {
   SECURE_MESSAGING_POSTGRES_MIGRATION,
   createNodePostgresSecureMessagingClient,
   createPostgresSecureMessagingStore,
+  type SecureMessagingPostgresTransaction,
 } from "../src";
 
 const databaseUrl = process.env.SECURE_MESSAGING_TEST_POSTGRES_URL;
@@ -26,6 +31,31 @@ test("packaged migration matches the exported idempotent migration", async () =>
   expect(shipped).toContain("CREATE INDEX IF NOT EXISTS");
 });
 
+test("transaction response loss is explicitly uncertain", async () => {
+  const store = createPostgresSecureMessagingStore({
+    client: {
+      query: async <Row>() => ({ rowCount: 0, rows: [] as Row[] }),
+      transaction: async () => {
+        throw new Error("private database diagnostic");
+      },
+    },
+    deviceId: "device-1",
+    durability: "local-wal",
+    tenantId: "tenant-1",
+  });
+  await expect(
+    store.commit({
+      conversation: {
+        conversationId: "conversation-1",
+        revision: 1,
+        sealedState: Uint8Array.of(1),
+        securityMode: "strict-e2ee",
+        status: "active",
+      },
+    }),
+  ).rejects.toBeInstanceOf(SecureMessagingDurabilityUncertainError);
+});
+
 test.skipIf(pool === undefined)(
   "passes every conformance and crash-boundary drill against PostgreSQL",
   async () => {
@@ -43,6 +73,36 @@ test.skipIf(pool === undefined)(
         }),
     });
     expect(result.scenarios).toHaveLength(9);
+    const uncertaintyTenant = `${runId}:durability-uncertainty`;
+    const faultClient = {
+      ...client,
+      transaction: async <Value>(
+        operation: (
+          transaction: SecureMessagingPostgresTransaction,
+        ) => Promise<Value>,
+      ) => {
+        await client.transaction(operation);
+        throw new Error("simulated lost commit response");
+      },
+    };
+    const uncertainty =
+      await runSecureMessagingDurabilityUncertaintyConformance({
+        commitWithLostAcknowledgement: (input) =>
+          createPostgresSecureMessagingStore({
+            client: faultClient,
+            deviceId: "device-1",
+            durability: "local-wal",
+            tenantId: uncertaintyTenant,
+          }).commit(input),
+        resolveAuthoritativeStore: () =>
+          createPostgresSecureMessagingStore({
+            client,
+            deviceId: "device-1",
+            durability: "local-wal",
+            tenantId: uncertaintyTenant,
+          }),
+      });
+    expect(uncertainty.initialResolution).toBe("applied");
     const tenantId = `${runId}:device-isolation`;
     const first = createPostgresSecureMessagingStore({
       client,

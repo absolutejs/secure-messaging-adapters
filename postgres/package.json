@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/secure-messaging-postgres",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Tenant-scoped atomic PostgreSQL SecureMessagingStore for AbsoluteJS.",
   "type": "module",
   "license": "Apache-2.0",
@@ -40,11 +40,11 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@absolutejs/secure-messaging": ">=0.5.1 <0.6"
+    "@absolutejs/secure-messaging": ">=0.6.1 <0.7"
   },
   "devDependencies": {
-    "@absolutejs/secure-messaging": "0.5.1",
-    "@absolutejs/secure-messaging-store-conformance": "0.1.0",
+    "@absolutejs/secure-messaging": "0.6.1",
+    "@absolutejs/secure-messaging-store-conformance": "0.2.0",
     "@types/pg": "8.23.1",
     "pg": "8.23.0"
   }

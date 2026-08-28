@@ -12,37 +12,37 @@
     },
     "conformance": {
       "name": "@absolutejs/secure-messaging-store-conformance",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "devDependencies": {
-        "@absolutejs/secure-messaging": "0.5.1",
+        "@absolutejs/secure-messaging": "0.6.1",
       },
       "peerDependencies": {
-        "@absolutejs/secure-messaging": ">=0.5.1 <0.6",
+        "@absolutejs/secure-messaging": ">=0.6.1 <0.7",
       },
     },
     "postgres": {
       "name": "@absolutejs/secure-messaging-postgres",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "devDependencies": {
-        "@absolutejs/secure-messaging": "0.5.1",
-        "@absolutejs/secure-messaging-store-conformance": "0.1.0",
+        "@absolutejs/secure-messaging": "0.6.1",
+        "@absolutejs/secure-messaging-store-conformance": "0.2.0",
         "@types/pg": "8.23.1",
         "pg": "8.23.0",
       },
       "peerDependencies": {
-        "@absolutejs/secure-messaging": ">=0.5.1 <0.6",
+        "@absolutejs/secure-messaging": ">=0.6.1 <0.7",
       },
     },
     "redis": {
       "name": "@absolutejs/secure-messaging-redis",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "devDependencies": {
-        "@absolutejs/secure-messaging": "0.5.1",
-        "@absolutejs/secure-messaging-store-conformance": "0.1.0",
+        "@absolutejs/secure-messaging": "0.6.1",
+        "@absolutejs/secure-messaging-store-conformance": "0.2.0",
         "ioredis": "6.0.0",
       },
       "peerDependencies": {
-        "@absolutejs/secure-messaging": ">=0.5.1 <0.6",
+        "@absolutejs/secure-messaging": ">=0.6.1 <0.7",
       },
     },
   },
@@ -51,7 +51,7 @@
 
     "@absolutejs/manifest": ["@absolutejs/manifest@0.9.0", "", { "peerDependencies": { "@sinclair/typebox": ">=0.34.0 <0.35.0" }, "bin": { "absolute-manifest": "dist/cli.js" } }, "sha512-naNDdwNoWQgJ3HuFbAu1UcOVR7SGpLBJz/seO8MMX32vrxk6esgzY7OB1CL8YDOegtI/EqQfcvnulnP66A9aGg=="],
 
-    "@absolutejs/secure-messaging": ["@absolutejs/secure-messaging@0.5.1", "", { "dependencies": { "@absolutejs/e2ee": "0.8.0", "@absolutejs/manifest": "^0.9.0", "@sinclair/typebox": "^0.34.0" } }, "sha512-iAzCBjBWnOxCqtxASS5HtTvz/hOi4MIupKxLt5N/iiX/LHUF4BEvA5GwvOTV/de1e9ZD1G1+MmS9KzuexfPo4Q=="],
+    "@absolutejs/secure-messaging": ["@absolutejs/secure-messaging@0.6.1", "", { "dependencies": { "@absolutejs/e2ee": "0.8.0", "@absolutejs/manifest": "^0.9.0", "@sinclair/typebox": "^0.34.0" } }, "sha512-otqr1DZr1Tg8XC6kGwgO8HQRSAA3nCdbr3QKefEkKP4CJoCCV4iZ6dg9GMD/BeWbF6vUqVjq2yY75062zvZVYA=="],
 
     "@absolutejs/secure-messaging-postgres": ["@absolutejs/secure-messaging-postgres@workspace:postgres"],
 

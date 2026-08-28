@@ -4,6 +4,10 @@ import type {
   SecureMessagingStore,
   SecureMessagingStoredConversation,
 } from "@absolutejs/secure-messaging";
+import {
+  SecureMessagingDurabilityUncertainError,
+  resolveSecureMessagingStoreCommit,
+} from "@absolutejs/secure-messaging";
 
 const farFuture = 4_000_000_000_000;
 
@@ -15,6 +19,22 @@ export type SecureMessagingStoreConformanceOptions = {
 
 export type SecureMessagingStoreConformanceResult = {
   readonly scenarios: readonly string[];
+};
+
+type SecureMessagingStoreCommitInput = Parameters<
+  SecureMessagingStore["commit"]
+>[0];
+
+export type SecureMessagingDurabilityUncertaintyConformanceOptions = {
+  readonly commitWithLostAcknowledgement: (
+    input: SecureMessagingStoreCommitInput,
+  ) => Promise<unknown>;
+  readonly resolveAuthoritativeStore: () =>
+    Promise<SecureMessagingStore> | SecureMessagingStore;
+};
+
+export type SecureMessagingDurabilityUncertaintyConformanceResult = {
+  readonly initialResolution: "applied" | "retry";
 };
 
 export type SecureMessagingStoreRecoveryFixture = {
@@ -88,6 +108,52 @@ const run = async (
       cause: error,
     });
   }
+};
+
+export const runSecureMessagingDurabilityUncertaintyConformance = async (
+  options: SecureMessagingDurabilityUncertaintyConformanceOptions,
+): Promise<SecureMessagingDurabilityUncertaintyConformanceResult> => {
+  const state = conversation("conversation-uncertain", 1);
+  const queued = outbox(state.conversationId, "queue-uncertain");
+  const input = { conversation: state, outbox: [queued] } as const;
+  let uncertainty: unknown;
+  try {
+    await options.commitWithLostAcknowledgement(input);
+  } catch (error) {
+    uncertainty = error;
+  }
+  if (!(uncertainty instanceof SecureMessagingDurabilityUncertainError))
+    throw new Error(
+      "SecureMessagingStore uncertainty conformance expected a typed durability error",
+    );
+
+  const authoritativeStore = await options.resolveAuthoritativeStore();
+  const initialResolution = await resolveSecureMessagingStoreCommit(
+    authoritativeStore,
+    input,
+  );
+  if (initialResolution === "conflict")
+    throw new Error(
+      "SecureMessagingStore uncertainty conformance found a conflicting authoritative state",
+    );
+  if (initialResolution === "retry")
+    equal(
+      await authoritativeStore.commit(input),
+      "committed",
+      "uncertain commit retry",
+    );
+  equal(
+    await resolveSecureMessagingStoreCommit(authoritativeStore, input),
+    "applied",
+    "uncertain commit final resolution",
+  );
+  equal(
+    (await authoritativeStore.listOutbox(10)).map(({ queueId }) => queueId),
+    [queued.queueId],
+    "uncertain commit durable outbox",
+  );
+
+  return Object.freeze({ initialResolution });
 };
 
 export const runSecureMessagingStoreConformance = async (

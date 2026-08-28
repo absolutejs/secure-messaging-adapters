@@ -4,7 +4,8 @@ Durable storage adapters and repeatable conformance drills for
 `@absolutejs/secure-messaging`.
 
 - `@absolutejs/secure-messaging-store-conformance` checks the atomic store
-  contract and crash boundaries without selecting a database.
+  contract, real acknowledgement-loss ambiguity, and crash boundaries without
+  selecting a database.
 - `@absolutejs/secure-messaging-postgres` is the recommended production store.
 - `@absolutejs/secure-messaging-redis` is available for operators who configure
   Redis as durable, non-evicting primary storage.

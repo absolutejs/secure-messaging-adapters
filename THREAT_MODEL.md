@@ -21,7 +21,8 @@ pipeline are not trusted with plaintext.
 - Replay conflicts and stale writers make no partial writes.
 - A rejected Welcome receipt survives without creating conversation state.
 - Acknowledgement policy is explicit. A timeout or disconnect after a mutation
-  is an ambiguous commit and forces reload before retry.
+  is reported as typed durability uncertainty and forces authoritative reload
+  and exact intended-conversation comparison before retry.
 - Backup restoration preserves the state, replay barrier, and encrypted outbox
   from one consistent recovery point. Recovery targets are isolated.
 - Stored identifiers are bounded and one-way digested; stored payloads are
@@ -29,18 +30,18 @@ pipeline are not trusted with plaintext.
 
 ## Threats and controls
 
-| Threat                                              | Primary control                                                                | Residual risk                                                                          |
-| --------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Stale process overwrites newer MLS state            | Compare-and-swap plus exact next-revision enforcement                          | Database administrator can still alter ciphertext or rows, causing denial of service   |
-| Crash splits state, replay, and delivery writes     | PostgreSQL transaction or single-slot Redis Lua script                         | Client timeout can hide whether the atomic commit completed                            |
-| Same tenant has two device-local MLS states         | Namespace digest binds canonical tenant and device tuple                       | Compromised application authentication can select the wrong device                     |
-| Replay receipt expires or disappears early          | Absolute expiry, non-evicting storage, backup drills                           | Operator-selected retention can still be too short                                     |
-| Redis acknowledges volatile or unreplicated state   | Mandatory `memory`, `replicated`, or `aof` mode; `WAIT`/`WAITAOF` count checks | Redis replication is not strongly consistent and failover can lose acknowledged writes |
-| Cluster router acknowledges on another shard        | Built-in wrappers are limited to direct standalone/Sentinel primary clients    | Cluster needs a custom same-shard client and independent validation                    |
-| PostgreSQL session weakens commit durability        | Per-transaction `synchronous_commit=on` or `remote_apply`                      | Synchronous standby loss can block availability                                        |
-| Backup exists but is unusable or from a mixed point | Two-phase synthetic seed/mutate/isolated-restore verifier                      | Operator backup tooling and encryption remain outside the package                      |
-| Oversized or malformed stored data exhausts memory  | Identifier/payload bounds, canonical base64url, exact-key parsing              | Database-level storage growth still needs quotas and monitoring                        |
-| Secrets leak through telemetry or drill evidence    | Generic errors and synthetic recovery fixtures                                 | Driver/database logs remain operator-controlled                                        |
+| Threat                                              | Primary control                                                                                      | Residual risk                                                                          |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Stale process overwrites newer MLS state            | Compare-and-swap plus exact next-revision enforcement                                                | Database administrator can still alter ciphertext or rows, causing denial of service   |
+| Crash splits state, replay, and delivery writes     | PostgreSQL transaction or single-slot Redis Lua script                                               | Client timeout can hide whether the atomic commit completed                            |
+| Same tenant has two device-local MLS states         | Namespace digest binds canonical tenant and device tuple                                             | Compromised application authentication can select the wrong device                     |
+| Replay receipt expires or disappears early          | Absolute expiry, non-evicting storage, backup drills                                                 | Operator-selected retention can still be too short                                     |
+| Redis acknowledges volatile or unreplicated state   | Mandatory durability mode, minimum-replica admission, typed uncertainty, and `WAIT`/`WAITAOF` checks | Redis replication is not strongly consistent and failover can lose acknowledged writes |
+| Cluster router acknowledges on another shard        | Built-in wrappers are limited to direct standalone/Sentinel primary clients                          | Cluster needs a custom same-shard client and independent validation                    |
+| PostgreSQL session weakens commit durability        | Per-transaction `synchronous_commit=on` or `remote_apply`                                            | Synchronous standby loss can block availability                                        |
+| Backup exists but is unusable or from a mixed point | Two-phase synthetic seed/mutate/isolated-restore verifier                                            | Operator backup tooling and encryption remain outside the package                      |
+| Oversized or malformed stored data exhausts memory  | Identifier/payload bounds, canonical base64url, exact-key parsing                                    | Database-level storage growth still needs quotas and monitoring                        |
+| Secrets leak through telemetry or drill evidence    | Generic errors and synthetic recovery fixtures                                                       | Driver/database logs remain operator-controlled                                        |
 
 ## Audit targets
 

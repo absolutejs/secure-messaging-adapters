@@ -6,6 +6,7 @@ import type {
   SecureMessagingStoreCommitResult,
   SecureMessagingStoredConversation,
 } from "@absolutejs/secure-messaging";
+import { SecureMessagingDurabilityUncertainError } from "@absolutejs/secure-messaging";
 
 const encoder = new TextEncoder();
 const MAXIMUM_IDENTIFIER_BYTES = 512;
@@ -170,6 +171,19 @@ class CommitConflict extends Error {
 
 const fail = (): never => {
   throw new Error("Secure messaging PostgreSQL store failed");
+};
+
+const durabilityUncertain = (cause: unknown): never => {
+  if (cause instanceof SecureMessagingDurabilityUncertainError) throw cause;
+  throw new SecureMessagingDurabilityUncertainError({ cause });
+};
+
+const mutate = async <Value>(operation: () => Promise<Value>) => {
+  try {
+    return await operation();
+  } catch (error) {
+    return durabilityUncertain(error);
+  }
 };
 
 const postgresJsQuery =
@@ -587,7 +601,7 @@ export const createPostgresSecureMessagingStore = (options: {
         return "committed";
       } catch (error) {
         if (error instanceof CommitConflict) return error.result;
-        throw error;
+        return durabilityUncertain(error);
       }
     },
     deleteExpiredInbound: async ({
@@ -660,17 +674,26 @@ export const createPostgresSecureMessagingStore = (options: {
       return Object.freeze(value);
     },
     recordInbound: async (receipt) =>
-      recordInbound(options.client, await tenantDigestPromise, receipt, now()),
+      mutate(async () =>
+        recordInbound(
+          options.client,
+          await tenantDigestPromise,
+          receipt,
+          now(),
+        ),
+      ),
     removeConversation: async (conversationId, expectedRevision) => {
       boundedIdentifier(conversationId);
       positiveLimit(expectedRevision);
-      const result = await options.client.query(
-        "DELETE FROM absolute_secure_messaging_conversations WHERE tenant_digest = $1 AND conversation_digest = $2 AND revision = $3",
-        [
-          await tenantDigestPromise,
-          await digest(conversationId),
-          expectedRevision,
-        ],
+      const result = await mutate(async () =>
+        options.client.query(
+          "DELETE FROM absolute_secure_messaging_conversations WHERE tenant_digest = $1 AND conversation_digest = $2 AND revision = $3",
+          [
+            await tenantDigestPromise,
+            await digest(conversationId),
+            expectedRevision,
+          ],
+        ),
       );
       return result.rowCount === 1;
     },
@@ -683,9 +706,11 @@ export const createPostgresSecureMessagingStore = (options: {
       const placeholders = digests
         .map((_, index) => `$${index + 2}`)
         .join(", ");
-      await options.client.query(
-        `DELETE FROM absolute_secure_messaging_outbox WHERE tenant_digest = $1 AND queue_digest IN (${placeholders})`,
-        [await tenantDigestPromise, ...digests],
+      await mutate(async () =>
+        options.client.query(
+          `DELETE FROM absolute_secure_messaging_outbox WHERE tenant_digest = $1 AND queue_digest IN (${placeholders})`,
+          [await tenantDigestPromise, ...digests],
+        ),
       );
     },
   });

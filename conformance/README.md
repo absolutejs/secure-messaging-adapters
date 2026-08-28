@@ -6,6 +6,12 @@ replay conflicts, rollback, concurrent writers, idempotent outbox acknowledgemen
 revision rollback rejection, revision-checked deletion, cloning, and ambiguous
 commit retries.
 
+`runSecureMessagingDurabilityUncertaintyConformance()` injects the real
+post-mutation acknowledgement-loss boundary. It requires the adapter to throw
+`SecureMessagingDurabilityUncertainError`, resolves the authoritative store,
+handles both the already-applied and safe-to-retry outcomes, and proves the
+final state and outbox effect exist exactly once.
+
 ```ts
 await runSecureMessagingStoreConformance({
   createStore: (scenario) => createStoreForIsolatedTenant(scenario),

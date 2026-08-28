@@ -31,6 +31,17 @@ replica AOF count acknowledge it. `replicated` uses `WAIT`, which reduces but
 does not eliminate failover data loss. `memory` performs no acknowledgement and
 must be limited to tests or deliberately lossy development environments. A
 durability timeout is an ambiguous commit: reload state before retrying.
+The adapter reports this boundary as
+`SecureMessagingDurabilityUncertainError`. Resolve the authoritative primary and
+call `resolveSecureMessagingStoreCommit()` with the intended conversation and
+expected revision; retry only when it returns `retry`. `applied` means the exact
+conversation and its atomic replay/outbox effects already committed, while
+`conflict` must never be overwritten.
+
+Sentinel operators should also configure `min-replicas-to-write` and
+`min-replicas-max-lag` so an isolated former primary stops accepting mutations.
+That admission gate reduces the unsafe partition window but does not replace
+`WAIT`/`WAITAOF`, authoritative-primary resolution, or uncertainty handling.
 
 The built-in node-redis and ioredis wrappers are for a direct standalone or
 Sentinel-managed primary connection. Although the hash tag keeps Lua keys in one

@@ -4,9 +4,11 @@ import type {
   SecureMessagingStore,
   SecureMessagingStoredConversation,
 } from "@absolutejs/secure-messaging";
+import { SecureMessagingDurabilityUncertainError } from "@absolutejs/secure-messaging";
 import { expect, test } from "bun:test";
 import {
   mutateSecureMessagingStoreAfterRecoveryPoint,
+  runSecureMessagingDurabilityUncertaintyConformance,
   runSecureMessagingStoreConformance,
   seedSecureMessagingStoreRecovery,
   verifySecureMessagingStoreRecovery,
@@ -93,6 +95,27 @@ test("the conformance runner exercises the complete durable contract", async () 
     createStore: memoryStore,
   });
   expect(result.scenarios).toHaveLength(9);
+});
+
+test("uncertainty conformance reconciles both possible commit outcomes", async () => {
+  const appliedStore = memoryStore();
+  const applied = await runSecureMessagingDurabilityUncertaintyConformance({
+    commitWithLostAcknowledgement: async (input) => {
+      await appliedStore.commit(input);
+      throw new SecureMessagingDurabilityUncertainError();
+    },
+    resolveAuthoritativeStore: () => appliedStore,
+  });
+  expect(applied.initialResolution).toBe("applied");
+
+  const retryStore = memoryStore();
+  const retried = await runSecureMessagingDurabilityUncertaintyConformance({
+    commitWithLostAcknowledgement: async () => {
+      throw new SecureMessagingDurabilityUncertainError();
+    },
+    resolveAuthoritativeStore: () => retryStore,
+  });
+  expect(retried.initialResolution).toBe("retry");
 });
 
 test("the two-phase recovery fixture detects a post-backup source", async () => {
