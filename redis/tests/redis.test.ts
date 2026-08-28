@@ -7,6 +7,8 @@ import { afterAll, expect, test } from "bun:test";
 import Redis from "ioredis";
 import {
   SECURE_MESSAGING_REDIS_COMMIT_SCRIPT,
+  SECURE_MESSAGING_REDIS_DEFAULT_KEY_PREFIX,
+  createSecureMessagingRedisAclRules,
   createIoRedisSecureMessagingClient,
   createRedisSecureMessagingStore,
 } from "../src";
@@ -31,6 +33,20 @@ test("commit script validates every conflict before its first write", () => {
   expect(
     SECURE_MESSAGING_REDIS_COMMIT_SCRIPT.indexOf("prior_payload"),
   ).toBeLessThan(firstWrite);
+});
+
+test("ACL contract is namespace-scoped and grants only exact commands", () => {
+  const rules = createSecureMessagingRedisAclRules();
+  expect(rules).toContain(`~${SECURE_MESSAGING_REDIS_DEFAULT_KEY_PREFIX}*`);
+  expect(rules).toContain("-@all");
+  expect(rules).toContain("resetchannels");
+  expect(rules).not.toContain("allkeys");
+  expect(rules).not.toContain("allchannels");
+  expect(rules).not.toContain("+config");
+  expect(rules).not.toContain("+flushall");
+  expect(() =>
+    createSecureMessagingRedisAclRules({ keyPrefix: "unsafe:*" }),
+  ).toThrow("unsafe");
 });
 
 test("insufficient durability acknowledgement is explicitly uncertain", async () => {
@@ -68,9 +84,17 @@ test.skipIf(redis === undefined)(
   "passes every conformance and crash-boundary drill against Redis",
   async () => {
     if (redis === undefined) throw new Error("Redis test URL is required");
+    if (redisUrl === undefined) throw new Error("Redis test URL is required");
     if (redis.status === "wait") await redis.connect();
     const client = createIoRedisSecureMessagingClient(redis);
     const runId = crypto.randomUUID();
+    const state = (marker: number) => ({
+      conversationId: "shared-conversation",
+      revision: 1,
+      sealedState: Uint8Array.of(marker),
+      securityMode: "strict-e2ee" as const,
+      status: "active" as const,
+    });
     const result = await runSecureMessagingStoreConformance({
       createStore: (scenario) =>
         createRedisSecureMessagingStore({
@@ -85,6 +109,55 @@ test.skipIf(redis === undefined)(
         }),
     });
     expect(result.scenarios).toHaveLength(9);
+
+    const aclUsername = `absolute-app-${runId}`;
+    const aclPassword = crypto.randomUUID();
+    await redis.call(
+      "ACL",
+      "SETUSER",
+      aclUsername,
+      "reset",
+      "on",
+      `>${aclPassword}`,
+      ...createSecureMessagingRedisAclRules(),
+    );
+    const aclRedis = new Redis(redisUrl, {
+      lazyConnect: true,
+      password: aclPassword,
+      username: aclUsername,
+    });
+    aclRedis.on("error", () => undefined);
+    try {
+      await aclRedis.connect();
+      const aclStore = createRedisSecureMessagingStore({
+        client: createIoRedisSecureMessagingClient(aclRedis),
+        deviceId: "device-1",
+        durability: {
+          mode: "aof",
+          replicaFsyncs: 0,
+          timeoutMilliseconds: 5_000,
+        },
+        tenantId: `${runId}:acl-contract`,
+      });
+      expect(
+        await aclStore.commit({
+          conversation: state(3),
+        }),
+      ).toBe("committed");
+      await expect(aclRedis.config("GET", "appendonly")).rejects.toThrow(
+        "NOPERM",
+      );
+      await expect(aclRedis.set("outside:namespace", "denied")).rejects.toThrow(
+        "NOPERM",
+      );
+      await expect(
+        aclRedis.publish("__sentinel__:hello", "denied"),
+      ).rejects.toThrow("NOPERM");
+    } finally {
+      aclRedis.disconnect(false);
+      await redis.call("ACL", "DELUSER", aclUsername);
+    }
+
     const uncertaintyTenant = `${runId}:durability-uncertainty`;
     const faultClient = {
       ...client,
@@ -143,13 +216,6 @@ test.skipIf(redis === undefined)(
         timeoutMilliseconds: 5_000,
       },
       tenantId,
-    });
-    const state = (marker: number) => ({
-      conversationId: "shared-conversation",
-      revision: 1,
-      sealedState: Uint8Array.of(marker),
-      securityMode: "strict-e2ee" as const,
-      status: "active" as const,
     });
     expect(await first.commit({ conversation: state(1) })).toBe("committed");
     expect(await second.commit({ conversation: state(2) })).toBe("committed");

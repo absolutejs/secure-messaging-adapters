@@ -10,6 +10,45 @@ const encoder = new TextEncoder();
 const MAXIMUM_IDENTIFIER_BYTES = 512;
 const DEFAULT_MAXIMUM_STATE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAXIMUM_OUTBOX_BYTES = 2 * 1024 * 1024;
+export const SECURE_MESSAGING_REDIS_DEFAULT_KEY_PREFIX =
+  "absolute:secure-messaging:" as const;
+
+export const SECURE_MESSAGING_REDIS_ACL_COMMANDS = Object.freeze([
+  "client|setinfo",
+  "client|setname",
+  "del",
+  "eval",
+  "get",
+  "hget",
+  "hgetall",
+  "hset",
+  "info",
+  "ping",
+  "set",
+  "wait",
+  "waitaof",
+  "zadd",
+  "zrange",
+  "zrem",
+] as const);
+
+export const createSecureMessagingRedisAclRules = (
+  options: {
+    readonly keyPrefix?: string;
+  } = {},
+): readonly string[] => {
+  const keyPrefix =
+    options.keyPrefix ?? SECURE_MESSAGING_REDIS_DEFAULT_KEY_PREFIX;
+  if (!/^[A-Za-z0-9:_-]{1,256}$/u.test(keyPrefix))
+    throw new Error("Secure messaging Redis ACL key prefix is unsafe");
+  return Object.freeze([
+    "resetkeys",
+    `~${keyPrefix}*`,
+    "resetchannels",
+    "-@all",
+    ...SECURE_MESSAGING_REDIS_ACL_COMMANDS.map((command) => `+${command}`),
+  ]);
+};
 
 export type SecureMessagingRedisClient = {
   readonly eval: (
@@ -444,7 +483,7 @@ export const createRedisSecureMessagingStore = (options: {
 }): SecureMessagingStore => {
   boundedIdentifier(options.tenantId);
   boundedIdentifier(options.deviceId);
-  const prefix = options.keyPrefix ?? "absolute:secure-messaging:";
+  const prefix = options.keyPrefix ?? SECURE_MESSAGING_REDIS_DEFAULT_KEY_PREFIX;
   if (prefix.length === 0 || prefix.length > 256 || prefix.includes("{"))
     fail();
   const now = options.now ?? Date.now;

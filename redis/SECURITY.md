@@ -17,3 +17,9 @@ but still treat every mutation transport failure or insufficient `WAIT`/`WAITAOF
 response as `SecureMessagingDurabilityUncertainError`. Resolve the authoritative
 primary and compare the complete intended conversation before retrying. Never
 trust state read from an isolated former primary and never retry blindly.
+
+Provision application ACL users with `createSecureMessagingRedisAclRules()`.
+Do not add command categories, broad key patterns, or Pub/Sub channels. Use
+separate identities for application access, replication, Sentinel monitoring,
+Sentinel peers, and administration. Disable the default user and rotate with a
+second named user before revoking and disconnecting the first.

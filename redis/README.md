@@ -43,6 +43,28 @@ Sentinel operators should also configure `min-replicas-to-write` and
 That admission gate reduces the unsafe partition window but does not replace
 `WAIT`/`WAITAOF`, authoritative-primary resolution, or uncertainty handling.
 
+Create application users from the exported least-privilege contract instead of
+granting command categories or using the legacy default user:
+
+```ts
+const permissions = createSecureMessagingRedisAclRules();
+await admin.call(
+  "ACL",
+  "SETUSER",
+  username,
+  "reset",
+  "on",
+  `>${generatedPassword}`,
+  ...permissions,
+);
+```
+
+The default profile grants no Pub/Sub channels, scopes keys to
+`absolute:secure-messaging:*`, denies every command category, and restores only
+the connection, read, Lua-internal mutation, and durability commands used by
+this adapter. Custom prefixes must contain only ASCII letters, digits, colon,
+underscore, and hyphen so ACL glob metacharacters cannot widen key access.
+
 The built-in node-redis and ioredis wrappers are for a direct standalone or
 Sentinel-managed primary connection. Although the hash tag keeps Lua keys in one
 Redis Cluster slot, a keyless `WAIT` or `WAITAOF` sent through a generic Cluster

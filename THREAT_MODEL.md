@@ -42,6 +42,7 @@ pipeline are not trusted with plaintext.
 | Backup exists but is unusable or from a mixed point | Two-phase synthetic seed/mutate/isolated-restore verifier                                            | Operator backup tooling and encryption remain outside the package                      |
 | Oversized or malformed stored data exhausts memory  | Identifier/payload bounds, canonical base64url, exact-key parsing                                    | Database-level storage growth still needs quotas and monitoring                        |
 | Secrets leak through telemetry or drill evidence    | Generic errors and synthetic recovery fixtures                                                       | Driver/database logs remain operator-controlled                                        |
+| Redis application identity becomes overprivileged   | Deny-first exact-command ACL contract with namespace and channel scope                               | Operators can still widen generated rules or expose the administrative identity        |
 
 ## Audit targets
 
